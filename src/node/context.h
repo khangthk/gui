@@ -1,9 +1,11 @@
-// Copyright (c) 2019-2022 The Bitcoin Core developers
+// Copyright (c) 2019-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #ifndef BITCOIN_NODE_CONTEXT_H
 #define BITCOIN_NODE_CONTEXT_H
+
+#include <node/mining_types.h>
 
 #include <atomic>
 #include <cstdlib>
@@ -16,8 +18,8 @@ class ArgsManager;
 class AddrMan;
 class BanMan;
 class BaseIndex;
-class CBlockPolicyEstimator;
 class CConnman;
+class FeeRateEstimatorManager;
 class ValidationSignals;
 class CScheduler;
 class CTxMemPool;
@@ -25,6 +27,7 @@ class ChainstateManager;
 class ECC_Context;
 class NetGroupManager;
 class PeerManager;
+class TorController;
 namespace interfaces {
 class Chain;
 class ChainClient;
@@ -59,14 +62,17 @@ struct NodeContext {
     std::unique_ptr<ECC_Context> ecc_context;
     //! Init interface for initializing current process and connecting to other processes.
     interfaces::Init* init{nullptr};
+    //! Function to request a shutdown.
+    std::function<bool()> shutdown_request;
     //! Interrupt object used to track whether node shutdown was requested.
-    util::SignalInterrupt* shutdown{nullptr};
+    util::SignalInterrupt* shutdown_signal{nullptr};
     std::unique_ptr<AddrMan> addrman;
     std::unique_ptr<CConnman> connman;
     std::unique_ptr<CTxMemPool> mempool;
     std::unique_ptr<const NetGroupManager> netgroupman;
-    std::unique_ptr<CBlockPolicyEstimator> fee_estimator;
+    std::unique_ptr<FeeRateEstimatorManager> fee_estimator_man;
     std::unique_ptr<PeerManager> peerman;
+    std::unique_ptr<TorController> tor_controller;
     std::unique_ptr<ChainstateManager> chainman;
     std::unique_ptr<BanMan> banman;
     ArgsManager* args{nullptr}; // Currently a raw pointer because the memory is not managed by this struct
@@ -77,6 +83,11 @@ struct NodeContext {
     //! Reference to chain client that should used to load or create wallets
     //! opened by the gui.
     std::unique_ptr<interfaces::Mining> mining;
+    //! Mining options used to create block templates. This value member is an
+    //! exception to the dependency guidance above because BlockCreateOptions is
+    //! a minimal dependency. It could be moved to the BlockTemplateCache
+    //! proposed in bitcoin/bitcoin#33421.
+    BlockCreateOptions mining_args;
     interfaces::WalletLoader* wallet_loader{nullptr};
     std::unique_ptr<CScheduler> scheduler;
     std::function<void()> rpc_interruption_point = [] {};

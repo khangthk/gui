@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 
-export LC_ALL=C
+export LC_ALL=C.UTF-8
 set -Eeuo pipefail
 
 # Declare paths to libraries
@@ -8,10 +8,10 @@ declare -A LIBS
 LIBS[cli]="libbitcoin_cli.a"
 LIBS[common]="libbitcoin_common.a"
 LIBS[consensus]="libbitcoin_consensus.a"
-LIBS[crypto]="crypto/libbitcoin_crypto.a crypto/libbitcoin_crypto_x86_shani.a crypto/libbitcoin_crypto_sse41.a crypto/libbitcoin_crypto_avx2.a"
+LIBS[crypto]="libbitcoin_crypto.a"
 LIBS[node]="libbitcoin_node.a"
-LIBS[util]="util/libbitcoin_util.a"
-LIBS[wallet]="wallet/libbitcoin_wallet.a"
+LIBS[util]="libbitcoin_util.a"
+LIBS[wallet]="libbitcoin_wallet.a"
 
 # Declare allowed dependencies "X Y" where X is allowed to depend on Y. This
 # list is taken from doc/design/libraries.md.
@@ -41,18 +41,12 @@ ALLOWED_DEPENDENCIES+=(
 
 # Declare list of known errors that should be suppressed.
 declare -A SUPPRESS
-# init.cpp file currently calls Berkeley DB sanity check function on startup, so
-# there is an undocumented dependency of the node library on the wallet library.
-SUPPRESS["init.cpp.o bdb.cpp.o _ZN6wallet27BerkeleyDatabaseSanityCheckEv"]=1
 # init/common.cpp file calls InitError and InitWarning from interface_ui which
 # is currently part of the node library. interface_ui should just be part of the
 # common library instead, and is moved in
 # https://github.com/bitcoin/bitcoin/issues/10102
 SUPPRESS["common.cpp.o interface_ui.cpp.o _Z11InitWarningRK13bilingual_str"]=1
 SUPPRESS["common.cpp.o interface_ui.cpp.o _Z9InitErrorRK13bilingual_str"]=1
-# rpc/external_signer.cpp adds defines node RPC methods but is built as part of the
-# common library. It should be moved to the node library instead.
-SUPPRESS["external_signer.cpp.o server.cpp.o _ZN9CRPCTable13appendCommandERKNSt7__cxx1112basic_stringIcSt11char_traitsIcESaIcEEEPK11CRPCCommand"]=1
 
 usage() {
    echo "Usage: $(basename "${BASH_SOURCE[0]}") [BUILD_DIR]"
@@ -133,7 +127,7 @@ check_disallowed() {
         dst_obj=$(obj_names "$symbol" "${temp_dir}/${dst}_exports.txt")
         while read src_obj; do
             if ! check_suppress "$src_obj" "$dst_obj" "$symbol"; then
-                echo "Error: $src_obj depends on $dst_obj symbol '$(c++filt "$symbol")', can suppess with:"
+                echo "Error: $src_obj depends on $dst_obj symbol '$(c++filt "$symbol")', can suppress with:"
                 echo "    SUPPRESS[\"$src_obj $dst_obj $symbol\"]=1"
                 result=1
             fi
@@ -145,7 +139,7 @@ check_disallowed() {
 # Declare array to track errors which were suppressed.
 declare -A SUPPRESSED
 
-# Return whether error should be suppressed and record suppresssion in
+# Return whether error should be suppressed and record suppression in
 # SUPPRESSED array.
 check_suppress() {
     local src_obj="$1"
@@ -161,7 +155,7 @@ check_suppress() {
     return 1
 }
 
-# Warn about error which were supposed to be suppress, but were not encountered.
+# Warn about error which were supposed to be suppressed, but were not encountered.
 check_not_suppressed() {
     for suppress in "${!SUPPRESS[@]}"; do
         if [[ ! -v SUPPRESSED[$suppress] ]]; then
@@ -190,7 +184,7 @@ fi
 # shellcheck disable=SC2046
 cmake --build "$BUILD_DIR" -j"$(nproc)" -t $(lib_targets)
 TEMP_DIR="$(mktemp -d)"
-cd "$BUILD_DIR/src"
+cd "$BUILD_DIR/lib"
 extract_symbols "$TEMP_DIR"
 if check_libraries "$TEMP_DIR"; then
     echo "Success! No unexpected dependencies were detected."

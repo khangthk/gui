@@ -1,4 +1,4 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+// Copyright (c) 2021-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -11,6 +11,7 @@
 #include <script/script.h>
 #include <serialize.h>
 #include <streams.h>
+#include <test/util/common.h>
 #include <test/util/random.h>
 #include <test/util/script.h>
 #include <test/util/setup_common.h>
@@ -73,9 +74,9 @@ BOOST_AUTO_TEST_CASE(package_hash_tests)
     CTransactionRef ptx_3{MakeTransactionRef(tx_3)};
 
     // It's easy to see that wtxids are sorted in lexicographical order:
-    Wtxid wtxid_1{Wtxid::FromHex("85cd1a31eb38f74ed5742ec9cb546712ab5aaf747de28a9168b53e846cbda17f").value()};
-    Wtxid wtxid_2{Wtxid::FromHex("b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff6b").value()};
-    Wtxid wtxid_3{Wtxid::FromHex("e065bac15f62bb4e761d761db928ddee65a47296b2b776785abb912cdec474e3").value()};
+    constexpr Wtxid wtxid_1{"85cd1a31eb38f74ed5742ec9cb546712ab5aaf747de28a9168b53e846cbda17f"};
+    constexpr Wtxid wtxid_2{"b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff6b"};
+    constexpr Wtxid wtxid_3{"e065bac15f62bb4e761d761db928ddee65a47296b2b776785abb912cdec474e3"};
     BOOST_CHECK_EQUAL(tx_1.GetWitnessHash(), wtxid_1);
     BOOST_CHECK_EQUAL(tx_2.GetWitnessHash(), wtxid_2);
     BOOST_CHECK_EQUAL(tx_3.GetWitnessHash(), wtxid_3);
@@ -84,9 +85,9 @@ BOOST_AUTO_TEST_CASE(package_hash_tests)
     BOOST_CHECK(wtxid_2.GetHex() < wtxid_3.GetHex());
 
     // The txids are not (we want to test that sorting and hashing use wtxid, not txid):
-    Txid txid_1{Txid::FromHex("bd0f71c1d5e50589063e134fad22053cdae5ab2320db5bf5e540198b0b5a4e69").value()};
-    Txid txid_2{Txid::FromHex("b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff6b").value()};
-    Txid txid_3{Txid::FromHex("ee707be5201160e32c4fc715bec227d1aeea5940fb4295605e7373edce3b1a93").value()};
+    constexpr Txid txid_1{"bd0f71c1d5e50589063e134fad22053cdae5ab2320db5bf5e540198b0b5a4e69"};
+    constexpr Txid txid_2{"b4749f017444b051c44dfd2720e88f314ff94f3dd6d56d40ef65854fcd7fff6b"};
+    constexpr Txid txid_3{"ee707be5201160e32c4fc715bec227d1aeea5940fb4295605e7373edce3b1a93"};
     BOOST_CHECK_EQUAL(tx_1.GetHash(), txid_1);
     BOOST_CHECK_EQUAL(tx_2.GetHash(), txid_2);
     BOOST_CHECK_EQUAL(tx_3.GetHash(), txid_3);
@@ -139,7 +140,7 @@ BOOST_AUTO_TEST_CASE(package_sanitization_tests)
         package_too_many.emplace_back(create_placeholder_tx(1, 1));
     }
     PackageValidationState state_too_many;
-    BOOST_CHECK(!IsWellFormedPackage(package_too_many, state_too_many, /*require_sorted=*/true));
+    BOOST_CHECK(!IsWellFormedPackage(package_too_many, state_too_many));
     BOOST_CHECK_EQUAL(state_too_many.GetResult(), PackageValidationResult::PCKG_POLICY);
     BOOST_CHECK_EQUAL(state_too_many.GetRejectReason(), "package-too-many-transactions");
 
@@ -154,7 +155,7 @@ BOOST_AUTO_TEST_CASE(package_sanitization_tests)
     }
     BOOST_CHECK(package_too_large.size() <= MAX_PACKAGE_COUNT);
     PackageValidationState state_too_large;
-    BOOST_CHECK(!IsWellFormedPackage(package_too_large, state_too_large, /*require_sorted=*/true));
+    BOOST_CHECK(!IsWellFormedPackage(package_too_large, state_too_large));
     BOOST_CHECK_EQUAL(state_too_large.GetResult(), PackageValidationResult::PCKG_POLICY);
     BOOST_CHECK_EQUAL(state_too_large.GetRejectReason(), "package-too-large");
 
@@ -165,7 +166,7 @@ BOOST_AUTO_TEST_CASE(package_sanitization_tests)
         package_duplicate_txids_empty.emplace_back(MakeTransactionRef(empty_tx));
     }
     PackageValidationState state_duplicates;
-    BOOST_CHECK(!IsWellFormedPackage(package_duplicate_txids_empty, state_duplicates, /*require_sorted=*/true));
+    BOOST_CHECK(!IsWellFormedPackage(package_duplicate_txids_empty, state_duplicates));
     BOOST_CHECK_EQUAL(state_duplicates.GetResult(), PackageValidationResult::PCKG_POLICY);
     BOOST_CHECK_EQUAL(state_duplicates.GetRejectReason(), "package-contains-duplicates");
     BOOST_CHECK(!IsConsistentPackage(package_duplicate_txids_empty));
@@ -184,7 +185,7 @@ BOOST_AUTO_TEST_CASE(package_sanitization_tests)
     // Transactions are considered sorted when they have no dependencies.
     BOOST_CHECK(IsTopoSortedPackage(package_conflicts));
     PackageValidationState state_conflicts;
-    BOOST_CHECK(!IsWellFormedPackage(package_conflicts, state_conflicts, /*require_sorted=*/true));
+    BOOST_CHECK(!IsWellFormedPackage(package_conflicts, state_conflicts));
     BOOST_CHECK_EQUAL(state_conflicts.GetResult(), PackageValidationResult::PCKG_POLICY);
     BOOST_CHECK_EQUAL(state_conflicts.GetRejectReason(), "conflict-in-package");
 
@@ -239,7 +240,7 @@ BOOST_AUTO_TEST_CASE(package_validation_tests)
     }
     // A single, giant transaction submitted through ProcessNewPackage fails on single tx policy.
     CTransactionRef giant_ptx = create_placeholder_tx(999, 999);
-    BOOST_CHECK(GetVirtualTransactionSize(*giant_ptx) > DEFAULT_ANCESTOR_SIZE_LIMIT_KVB * 1000);
+    BOOST_CHECK(GetVirtualTransactionSize(*giant_ptx) > DEFAULT_CLUSTER_SIZE_LIMIT_KVB * 1000);
     Package package_single_giant{giant_ptx};
     auto result_single_large = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool, package_single_giant, /*test_accept=*/true, /*client_maxfeerate=*/{});
     if (auto err_single_large{CheckPackageMempoolAcceptResult(package_single_giant, result_single_large, /*expect_valid=*/false, nullptr)}) {
@@ -274,8 +275,8 @@ BOOST_AUTO_TEST_CASE(noncontextual_package_tests)
         CTransactionRef tx_child = MakeTransactionRef(mtx_child);
 
         PackageValidationState state;
-        BOOST_CHECK(IsWellFormedPackage({tx_parent, tx_child}, state, /*require_sorted=*/true));
-        BOOST_CHECK(!IsWellFormedPackage({tx_child, tx_parent}, state, /*require_sorted=*/true));
+        BOOST_CHECK(IsWellFormedPackage({tx_parent, tx_child}, state));
+        BOOST_CHECK(!IsWellFormedPackage({tx_child, tx_parent}, state));
         BOOST_CHECK_EQUAL(state.GetResult(), PackageValidationResult::PCKG_POLICY);
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "package-not-sorted");
         BOOST_CHECK(IsChildWithParents({tx_parent, tx_child}));
@@ -283,6 +284,8 @@ BOOST_AUTO_TEST_CASE(noncontextual_package_tests)
         BOOST_CHECK(GetPackageHash({tx_parent}) != GetPackageHash({tx_child}));
         BOOST_CHECK(GetPackageHash({tx_child, tx_child}) != GetPackageHash({tx_child}));
         BOOST_CHECK(GetPackageHash({tx_child, tx_parent}) != GetPackageHash({tx_child, tx_child}));
+        BOOST_CHECK(!IsChildWithParents({}));
+        BOOST_CHECK(!IsChildWithParentsTree({}));
     }
 
     // 24 Parents and 1 Child
@@ -306,7 +309,7 @@ BOOST_AUTO_TEST_CASE(noncontextual_package_tests)
         package.push_back(MakeTransactionRef(child));
 
         PackageValidationState state;
-        BOOST_CHECK(IsWellFormedPackage(package, state, /*require_sorted=*/true));
+        BOOST_CHECK(IsWellFormedPackage(package, state));
         BOOST_CHECK(IsChildWithParents(package));
         BOOST_CHECK(IsChildWithParentsTree(package));
 
@@ -344,8 +347,8 @@ BOOST_AUTO_TEST_CASE(noncontextual_package_tests)
         BOOST_CHECK(!IsChildWithParentsTree({tx_parent, tx_parent_also_child, tx_child}));
         // IsChildWithParents does not detect unsorted parents.
         BOOST_CHECK(IsChildWithParents({tx_parent_also_child, tx_parent, tx_child}));
-        BOOST_CHECK(IsWellFormedPackage({tx_parent, tx_parent_also_child, tx_child}, state, /*require_sorted=*/true));
-        BOOST_CHECK(!IsWellFormedPackage({tx_parent_also_child, tx_parent, tx_child}, state, /*require_sorted=*/true));
+        BOOST_CHECK(IsWellFormedPackage({tx_parent, tx_parent_also_child, tx_child}, state));
+        BOOST_CHECK(!IsWellFormedPackage({tx_parent_also_child, tx_parent, tx_child}, state));
         BOOST_CHECK_EQUAL(state.GetResult(), PackageValidationResult::PCKG_POLICY);
         BOOST_CHECK_EQUAL(state.GetRejectReason(), "package-not-sorted");
     }
@@ -353,6 +356,9 @@ BOOST_AUTO_TEST_CASE(noncontextual_package_tests)
 
 BOOST_AUTO_TEST_CASE(package_submission_tests)
 {
+    // Mine blocks to mature coinbases.
+    mineBlocks(3);
+    MockMempoolMinFee(CFeeRate(5000), *m_node.mempool);
     LOCK(cs_main);
     unsigned int expected_pool_size = m_node.mempool->size();
     CKey parent_key = GenerateRandomKey();
@@ -439,20 +445,6 @@ BOOST_AUTO_TEST_CASE(package_submission_tests)
         BOOST_CHECK_EQUAL(result_quit_early.m_state.GetResult(), PackageValidationResult::PCKG_TX);
     }
 
-    // Child with missing parent.
-    mtx_child.vin.emplace_back(COutPoint(package_unrelated[0]->GetHash(), 0));
-    Package package_missing_parent;
-    package_missing_parent.push_back(tx_parent);
-    package_missing_parent.push_back(MakeTransactionRef(mtx_child));
-    {
-        const auto result_missing_parent = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
-                                                             package_missing_parent, /*test_accept=*/false, /*client_maxfeerate=*/{});
-        BOOST_CHECK(result_missing_parent.m_state.IsInvalid());
-        BOOST_CHECK_EQUAL(result_missing_parent.m_state.GetResult(), PackageValidationResult::PCKG_POLICY);
-        BOOST_CHECK_EQUAL(result_missing_parent.m_state.GetRejectReason(), "package-not-child-with-unconfirmed-parents");
-        BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
-    }
-
     // Submit package with parent + child.
     {
         const auto submit_parent_child = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
@@ -490,6 +482,151 @@ BOOST_AUTO_TEST_CASE(package_submission_tests)
 
         BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
     }
+
+    // In-mempool parent and child with missing parent.
+    {
+        auto tx_parent_1 = MakeTransactionRef(CreateValidMempoolTransaction(/*input_transaction=*/m_coinbase_txns[1], /*input_vout=*/0,
+                                                                            /*input_height=*/0, /*input_signing_key=*/coinbaseKey,
+                                                                            /*output_destination=*/parent_locking_script,
+                                                                            /*output_amount=*/CAmount(50 * COIN - low_fee_amt), /*submit=*/false));
+        auto tx_parent_2 = MakeTransactionRef(CreateValidMempoolTransaction(/*input_transaction=*/m_coinbase_txns[2], /*input_vout=*/0,
+                                                                            /*input_height=*/0, /*input_signing_key=*/coinbaseKey,
+                                                                            /*output_destination=*/parent_locking_script,
+                                                                            /*output_amount=*/CAmount(50 * COIN - 800), /*submit=*/false));
+
+        auto tx_child_missing_parent = MakeTransactionRef(CreateValidMempoolTransaction({tx_parent_1, tx_parent_2},
+                                                                                        {{tx_parent_1->GetHash(), 0}, {tx_parent_2->GetHash(), 0}},
+                                                                                        /*input_height=*/0, {parent_key},
+                                                                                        {{49 * COIN, child_locking_script}}, /*submit=*/false));
+
+        Package package_missing_parent{tx_parent_1, tx_child_missing_parent};
+
+        const auto result_missing_parent = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
+                                                             package_missing_parent, /*test_accept=*/false, /*client_maxfeerate=*/{});
+        if (auto err_missing_parent{CheckPackageMempoolAcceptResult(package_missing_parent, result_missing_parent, /*expect_valid=*/false, m_node.mempool.get())}) {
+            BOOST_ERROR(err_missing_parent.value());
+        } else {
+            auto it_parent = result_missing_parent.m_tx_results.find(tx_parent_1->GetWitnessHash());
+            auto it_child = result_missing_parent.m_tx_results.find(tx_child_missing_parent->GetWitnessHash());
+
+            BOOST_CHECK_EQUAL(result_missing_parent.m_state.GetResult(), PackageValidationResult::PCKG_TX);
+            BOOST_CHECK_EQUAL(result_missing_parent.m_state.GetRejectReason(), "transaction failed");
+
+            BOOST_CHECK_EQUAL(it_parent->second.m_state.GetResult(), TxValidationResult::TX_RECONSIDERABLE);
+            BOOST_CHECK_EQUAL(it_child->second.m_state.GetResult(), TxValidationResult::TX_MISSING_INPUTS);
+            BOOST_CHECK_EQUAL(it_child->second.m_state.GetRejectReason(), "bad-txns-inputs-missingorspent");
+            BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+        }
+
+        // Submit parent2 ahead of time, should become ok.
+        Package package_just_parent2{tx_parent_2};
+        expected_pool_size += 1;
+        const auto result_just_parent2 = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
+                                                           package_just_parent2, /*test_accept=*/false, /*client_maxfeerate=*/{});
+        if (auto err_parent2{CheckPackageMempoolAcceptResult(package_just_parent2, result_just_parent2, /*expect_valid=*/true, m_node.mempool.get())}) {
+            BOOST_ERROR(err_parent2.value());
+        }
+        BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+
+        const auto result_parent_already_in = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
+                                                                package_missing_parent, /*test_accept=*/false, /*client_maxfeerate=*/{});
+        expected_pool_size += 2;
+        if (auto err_parent_already_in{CheckPackageMempoolAcceptResult(package_missing_parent, result_parent_already_in, /*expect_valid=*/true, m_node.mempool.get())}) {
+            BOOST_ERROR(err_parent_already_in.value());
+        }
+        BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+    }
+}
+
+// Tests for packages containing a single transaction
+BOOST_AUTO_TEST_CASE(package_single_tx)
+{
+    // Mine blocks to mature coinbases.
+    mineBlocks(3);
+    LOCK(cs_main);
+    auto expected_pool_size{m_node.mempool->size()};
+
+    const CAmount high_fee{1000};
+
+    // No unconfirmed parents
+    CKey single_key = GenerateRandomKey();
+    CScript single_locking_script = GetScriptForDestination(PKHash(single_key.GetPubKey()));
+    auto mtx_single = CreateValidMempoolTransaction(/*input_transaction=*/m_coinbase_txns[0], /*input_vout=*/0,
+                                                    /*input_height=*/0, /*input_signing_key=*/coinbaseKey,
+                                                    /*output_destination=*/single_locking_script,
+                                                    /*output_amount=*/CAmount(49 * COIN), /*submit=*/false);
+    CTransactionRef tx_single = MakeTransactionRef(mtx_single);
+    Package package_tx_single{tx_single};
+    const auto result_single_tx = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
+                                                    package_tx_single, /*test_accept=*/false, /*client_maxfeerate=*/{});
+    expected_pool_size += 1;
+    BOOST_CHECK_MESSAGE(result_single_tx.m_state.IsValid(),
+                        "Package validation unexpectedly failed: " << result_single_tx.m_state.ToString());
+    BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+
+    // Parent and Child. Both submitted by themselves through the ProcessNewPackage interface.
+    CKey parent_key = GenerateRandomKey();
+    CScript parent_locking_script = GetScriptForDestination(WitnessV0KeyHash(parent_key.GetPubKey()));
+    auto mtx_parent = CreateValidMempoolTransaction(/*input_transaction=*/m_coinbase_txns[1], /*input_vout=*/0,
+                                                    /*input_height=*/0, /*input_signing_key=*/coinbaseKey,
+                                                    /*output_destination=*/parent_locking_script,
+                                                    /*output_amount=*/CAmount(50 * COIN) - high_fee, /*submit=*/false);
+    CTransactionRef tx_parent = MakeTransactionRef(mtx_parent);
+    Package package_just_parent{tx_parent};
+    const auto result_just_parent = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool, package_just_parent, /*test_accept=*/false, /*client_maxfeerate=*/{});
+    if (auto err_parent_child{CheckPackageMempoolAcceptResult(package_just_parent, result_just_parent, /*expect_valid=*/true, nullptr)}) {
+        BOOST_ERROR(err_parent_child.value());
+    } else {
+        auto it_parent = result_just_parent.m_tx_results.find(tx_parent->GetWitnessHash());
+        BOOST_CHECK_MESSAGE(it_parent->second.m_state.IsValid(), it_parent->second.m_state.ToString());
+        BOOST_CHECK(it_parent->second.m_effective_feerate.value().GetFee(GetVirtualTransactionSize(*tx_parent)) == high_fee);
+        BOOST_CHECK_EQUAL(it_parent->second.m_wtxids_fee_calculations.value().size(), 1);
+        BOOST_CHECK_EQUAL(it_parent->second.m_wtxids_fee_calculations.value().front(), tx_parent->GetWitnessHash());
+    }
+    expected_pool_size += 1;
+    BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+
+    CKey child_key = GenerateRandomKey();
+    CScript child_locking_script = GetScriptForDestination(WitnessV0KeyHash(child_key.GetPubKey()));
+    auto mtx_child = CreateValidMempoolTransaction(/*input_transaction=*/tx_parent, /*input_vout=*/0,
+                                                   /*input_height=*/101, /*input_signing_key=*/parent_key,
+                                                   /*output_destination=*/child_locking_script,
+                                                   /*output_amount=*/CAmount(50 * COIN) - 2 * high_fee, /*submit=*/false);
+    CTransactionRef tx_child = MakeTransactionRef(mtx_child);
+    Package package_just_child{tx_child};
+    const auto result_just_child = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool, package_just_child, /*test_accept=*/false, /*client_maxfeerate=*/{});
+    if (auto err_parent_child{CheckPackageMempoolAcceptResult(package_just_child, result_just_child, /*expect_valid=*/true, nullptr)}) {
+        BOOST_ERROR(err_parent_child.value());
+    } else {
+        auto it_child = result_just_child.m_tx_results.find(tx_child->GetWitnessHash());
+        BOOST_CHECK_MESSAGE(it_child->second.m_state.IsValid(), it_child->second.m_state.ToString());
+        BOOST_CHECK(it_child->second.m_effective_feerate.value().GetFee(GetVirtualTransactionSize(*tx_child)) == high_fee);
+        BOOST_CHECK_EQUAL(it_child->second.m_wtxids_fee_calculations.value().size(), 1);
+        BOOST_CHECK_EQUAL(it_child->second.m_wtxids_fee_calculations.value().front(), tx_child->GetWitnessHash());
+    }
+    expected_pool_size += 1;
+    BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+
+    // Too-low fee to RBF tx_single
+    auto mtx_single_low_fee = CreateValidMempoolTransaction(/*input_transaction=*/m_coinbase_txns[0], /*input_vout=*/0,
+                                                    /*input_height=*/0, /*input_signing_key=*/coinbaseKey,
+                                                    /*output_destination=*/single_locking_script,
+                                                    /*output_amount=*/CAmount(49 * COIN - 1), /*submit=*/false);
+    CTransactionRef tx_single_low_fee = MakeTransactionRef(mtx_single_low_fee);
+    Package package_tx_single_low_fee{tx_single_low_fee};
+    const auto result_single_tx_low_fee = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool,
+                                                    package_tx_single_low_fee, /*test_accept=*/false, /*client_maxfeerate=*/{});
+
+    BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
+
+    BOOST_CHECK(!result_single_tx_low_fee.m_state.IsValid());
+    BOOST_CHECK_EQUAL(result_single_tx_low_fee.m_state.GetResult(), PackageValidationResult::PCKG_TX);
+    auto it_low_fee = result_single_tx_low_fee.m_tx_results.find(tx_single_low_fee->GetWitnessHash());
+    BOOST_CHECK_EQUAL(it_low_fee->second.m_state.GetResult(), TxValidationResult::TX_RECONSIDERABLE);
+    if (auto err_single{CheckPackageMempoolAcceptResult(package_tx_single_low_fee, result_single_tx_low_fee, /*expect_valid=*/false, m_node.mempool.get())}) {
+        BOOST_ERROR(err_single.value());
+    }
+    BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
 }
 
 // Tests for packages containing transactions that have same-txid-different-witness equivalents in
@@ -498,7 +635,7 @@ BOOST_AUTO_TEST_CASE(package_witness_swap_tests)
 {
     // Mine blocks to mature coinbases.
     mineBlocks(5);
-    MockMempoolMinFee(CFeeRate(5000));
+    MockMempoolMinFee(CFeeRate(5000), *m_node.mempool);
     LOCK(cs_main);
 
     // Transactions with a same-txid-different-witness transaction in the mempool should be ignored,
@@ -731,7 +868,7 @@ BOOST_AUTO_TEST_CASE(package_witness_swap_tests)
 BOOST_AUTO_TEST_CASE(package_cpfp_tests)
 {
     mineBlocks(5);
-    MockMempoolMinFee(CFeeRate(5000));
+    MockMempoolMinFee(CFeeRate(5000), *m_node.mempool);
     LOCK(::cs_main);
     size_t expected_pool_size = m_node.mempool->size();
     CKey child_key = GenerateRandomKey();
@@ -772,10 +909,10 @@ BOOST_AUTO_TEST_CASE(package_cpfp_tests)
         } else {
             BOOST_CHECK_EQUAL(submit_cpfp_deprio.m_state.GetResult(), PackageValidationResult::PCKG_TX);
             BOOST_CHECK_EQUAL(submit_cpfp_deprio.m_tx_results.find(tx_parent->GetWitnessHash())->second.m_state.GetResult(),
-                              TxValidationResult::TX_MEMPOOL_POLICY);
+                              TxValidationResult::TX_RECONSIDERABLE);
             BOOST_CHECK_EQUAL(submit_cpfp_deprio.m_tx_results.find(tx_child->GetWitnessHash())->second.m_state.GetResult(),
-                              TxValidationResult::TX_MISSING_INPUTS);
-            BOOST_CHECK(submit_cpfp_deprio.m_tx_results.find(tx_parent->GetWitnessHash())->second.m_state.GetRejectReason() == "min relay fee not met");
+                              TxValidationResult::TX_RECONSIDERABLE);
+            BOOST_CHECK_EQUAL(submit_cpfp_deprio.m_tx_results.find(tx_parent->GetWitnessHash())->second.m_state.GetRejectReason(), "mempool min fee not met");
             BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
         }
     }
@@ -931,8 +1068,8 @@ BOOST_AUTO_TEST_CASE(package_cpfp_tests)
                     strprintf("rich parent: expected fee %s, got %s", high_parent_fee, it_parent->second.m_base_fees.value()));
             BOOST_CHECK(it_parent->second.m_effective_feerate == CFeeRate(high_parent_fee, GetVirtualTransactionSize(*tx_parent_rich)));
             BOOST_CHECK_EQUAL(it_child->second.m_result_type, MempoolAcceptResult::ResultType::INVALID);
-            BOOST_CHECK_EQUAL(it_child->second.m_state.GetResult(), TxValidationResult::TX_MEMPOOL_POLICY);
-            BOOST_CHECK(it_child->second.m_state.GetRejectReason() == "min relay fee not met");
+            BOOST_CHECK_EQUAL(it_child->second.m_state.GetResult(), TxValidationResult::TX_RECONSIDERABLE);
+            BOOST_CHECK_EQUAL(it_child->second.m_state.GetRejectReason(), "mempool min fee not met");
         }
         expected_pool_size += 1;
         BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
@@ -997,7 +1134,7 @@ BOOST_AUTO_TEST_CASE(package_rbf_tests)
         BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
 
         // child1 has been replaced
-        BOOST_CHECK(!m_node.mempool->exists(GenTxid::Txid(tx_child_1->GetHash())));
+        BOOST_CHECK(!m_node.mempool->exists(tx_child_1->GetHash()));
     }
 
     // Test package rbf.
@@ -1024,7 +1161,8 @@ BOOST_AUTO_TEST_CASE(package_rbf_tests)
             child_key, child_spk, coinbase_value - 199 - 1300, /*submit=*/false));
 
         // In all packages, the parents conflict with each other
-        BOOST_CHECK(tx_parent_1->GetHash() != tx_parent_2->GetHash() && tx_parent_2->GetHash() != tx_parent_3->GetHash());
+        BOOST_CHECK(tx_parent_1->GetHash() != tx_parent_2->GetHash());
+        BOOST_CHECK(tx_parent_2->GetHash() != tx_parent_3->GetHash());
 
         // 1 parent paying 200sat, 1 child paying 200sat.
         Package package1{tx_parent_1, tx_child_1};
@@ -1078,7 +1216,25 @@ BOOST_AUTO_TEST_CASE(package_rbf_tests)
         BOOST_CHECK_EQUAL(it_child_3->second.m_effective_feerate.value().GetFee(package3_total_vsize), 199 + 1300);
 
         BOOST_CHECK_EQUAL(m_node.mempool->size(), expected_pool_size);
-    }
 
+        // Finally, check that we can prioritise tx_child_1 to get package1 into the mempool.
+        // It should not be possible to resubmit package1 and get it in without prioritisation.
+        const auto submit4 = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool, package1, false, std::nullopt);
+        if (auto err_4{CheckPackageMempoolAcceptResult(package1, submit4, /*expect_valid=*/false, m_node.mempool.get())}) {
+            BOOST_ERROR(err_4.value());
+        }
+        m_node.mempool->PrioritiseTransaction(tx_child_1->GetHash(), 1363);
+        const auto submit5 = ProcessNewPackage(m_node.chainman->ActiveChainstate(), *m_node.mempool, package1, false, std::nullopt);
+        if (auto err_5{CheckPackageMempoolAcceptResult(package1, submit5, /*expect_valid=*/true, m_node.mempool.get())}) {
+            BOOST_ERROR(err_5.value());
+        }
+        it_parent_1 = submit5.m_tx_results.find(tx_parent_1->GetWitnessHash());
+        it_child_1 = submit5.m_tx_results.find(tx_child_1->GetWitnessHash());
+        BOOST_CHECK_EQUAL(it_parent_1->second.m_result_type, MempoolAcceptResult::ResultType::VALID);
+        BOOST_CHECK_EQUAL(it_child_1->second.m_result_type, MempoolAcceptResult::ResultType::VALID);
+        LOCK(m_node.mempool->cs);
+        BOOST_CHECK(m_node.mempool->GetIter(tx_parent_1->GetHash()).has_value());
+        BOOST_CHECK(m_node.mempool->GetIter(tx_child_1->GetHash()).has_value());
+    }
 }
 BOOST_AUTO_TEST_SUITE_END()

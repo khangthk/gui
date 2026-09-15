@@ -1,5 +1,5 @@
 // Copyright (c) 2009-2010 Satoshi Nakamoto
-// Copyright (c) 2009-2022 The Bitcoin Core developers
+// Copyright (c) 2009-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -21,34 +21,34 @@
 
 /** Message header.
  * (4) message start.
- * (12) command.
+ * (12) message type.
  * (4) size.
  * (4) checksum.
  */
 class CMessageHeader
 {
 public:
-    static constexpr size_t COMMAND_SIZE = 12;
+    static constexpr size_t MESSAGE_TYPE_SIZE = 12;
     static constexpr size_t MESSAGE_SIZE_SIZE = 4;
     static constexpr size_t CHECKSUM_SIZE = 4;
-    static constexpr size_t MESSAGE_SIZE_OFFSET = std::tuple_size_v<MessageStartChars> + COMMAND_SIZE;
+    static constexpr size_t MESSAGE_SIZE_OFFSET = std::tuple_size_v<MessageStartChars> + MESSAGE_TYPE_SIZE;
     static constexpr size_t CHECKSUM_OFFSET = MESSAGE_SIZE_OFFSET + MESSAGE_SIZE_SIZE;
-    static constexpr size_t HEADER_SIZE = std::tuple_size_v<MessageStartChars> + COMMAND_SIZE + MESSAGE_SIZE_SIZE + CHECKSUM_SIZE;
+    static constexpr size_t HEADER_SIZE = std::tuple_size_v<MessageStartChars> + MESSAGE_TYPE_SIZE + MESSAGE_SIZE_SIZE + CHECKSUM_SIZE;
 
     explicit CMessageHeader() = default;
 
-    /** Construct a P2P message header from message-start characters, a command and the size of the message.
-     * @note Passing in a `pszCommand` longer than COMMAND_SIZE will result in a run-time assertion error.
+    /** Construct a P2P message header from message-start characters, a message type and the size of the message.
+     * @note Passing in a `msg_type` longer than MESSAGE_TYPE_SIZE will result in a run-time assertion error.
      */
-    CMessageHeader(const MessageStartChars& pchMessageStartIn, const char* pszCommand, unsigned int nMessageSizeIn);
+    CMessageHeader(const MessageStartChars& pchMessageStartIn, const char* msg_type, unsigned int nMessageSizeIn);
 
-    std::string GetCommand() const;
-    bool IsCommandValid() const;
+    std::string GetMessageType() const;
+    bool IsMessageTypeValid() const;
 
-    SERIALIZE_METHODS(CMessageHeader, obj) { READWRITE(obj.pchMessageStart, obj.pchCommand, obj.nMessageSize, obj.pchChecksum); }
+    SERIALIZE_METHODS(CMessageHeader, obj) { READWRITE(obj.pchMessageStart, obj.m_msg_type, obj.nMessageSize, obj.pchChecksum); }
 
     MessageStartChars pchMessageStart{};
-    char pchCommand[COMMAND_SIZE]{};
+    char m_msg_type[MESSAGE_TYPE_SIZE]{};
     uint32_t nMessageSize{std::numeric_limits<uint32_t>::max()};
     uint8_t pchChecksum[CHECKSUM_SIZE]{};
 };
@@ -264,6 +264,10 @@ inline constexpr const char* WTXIDRELAY{"wtxidrelay"};
  * txreconciliation, as described by BIP 330.
  */
 inline constexpr const char* SENDTXRCNCL{"sendtxrcncl"};
+/**
+ * BIP 434 Peer feature negotiation
+ */
+inline constexpr const char* FEATURE{"feature"};
 }; // namespace NetMsgType
 
 /** All known message types (see above). Keep this in the same order as the list of messages above. */
@@ -303,7 +307,15 @@ inline const std::array ALL_NET_MESSAGE_TYPES{std::to_array<std::string>({
     NetMsgType::CFCHECKPT,
     NetMsgType::WTXIDRELAY,
     NetMsgType::SENDTXRCNCL,
+    NetMsgType::FEATURE,
 })};
+
+inline constexpr size_t MAX_FEATUREID_LENGTH{80};
+inline constexpr size_t MAX_FEATUREDATA_LENGTH{512};
+
+namespace NetMsgFeature {
+//inline constexpr std::string_view FOO{"BIP-FOO"};
+}
 
 /** nServices flags */
 enum ServiceFlags : uint64_t {
@@ -352,6 +364,14 @@ std::vector<std::string> serviceFlagsToStr(uint64_t flags);
  * desired service flags (compatible with our new flags).
  */
 constexpr ServiceFlags SeedsServiceFlags() { return ServiceFlags(NODE_NETWORK | NODE_WITNESS); }
+
+/**
+ * Service flags we assume for addresses obtained from the DNS seeds and the
+ * fixed seeds, which don't come with service flags attached.
+ * BIP324 support can be safely assumed because the vast majority of listening nodes signals NODE_P2P_V2, and if the
+ * assumption is wrong for a given peer we simply reconnect using v1 transport.
+ */
+constexpr ServiceFlags SeedsAssumedServiceFlags() { return ServiceFlags(SeedsServiceFlags() | NODE_P2P_V2); }
 
 /**
  * Checks if a peer with the given service flags may be capable of having a
@@ -467,8 +487,8 @@ public:
 };
 
 /** getdata message type flags */
-const uint32_t MSG_WITNESS_FLAG = 1 << 30;
-const uint32_t MSG_TYPE_MASK = 0xffffffff >> 2;
+inline constexpr uint32_t MSG_WITNESS_FLAG = 1 << 30;
+inline constexpr uint32_t MSG_TYPE_MASK = 0xffffffff >> 2;
 
 /** getdata / inv message types.
  * These numbers are defined by the protocol. When adding a new value, be sure
@@ -500,7 +520,7 @@ public:
 
     friend bool operator<(const CInv& a, const CInv& b);
 
-    std::string GetCommand() const;
+    std::string GetMessageType() const;
     std::string ToString() const;
 
     // Single-message helper methods

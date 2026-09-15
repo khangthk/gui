@@ -1,28 +1,29 @@
-// Copyright (c) 2021-2022 The Bitcoin Core developers
+// Copyright (c) 2021-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 #include <ipc/process.h>
 #include <ipc/protocol.h>
-#include <logging.h>
 #include <mp/util.h>
 #include <tinyformat.h>
 #include <util/fs.h>
+#include <util/log.h>
 #include <util/strencodings.h>
 #include <util/syserror.h>
 
 #include <cstdint>
 #include <cstdlib>
-#include <errno.h>
+#include <cstring>
+#include <cerrno>
 #include <exception>
 #include <iostream>
 #include <stdexcept>
-#include <string.h>
+#include <utility>
+#include <vector>
+
 #include <sys/socket.h>
 #include <sys/un.h>
 #include <unistd.h>
-#include <utility>
-#include <vector>
 
 using util::RemovePrefixView;
 
@@ -31,17 +32,17 @@ namespace {
 class ProcessImpl : public Process
 {
 public:
-    int spawn(const std::string& new_exe_name, const fs::path& argv0_path, int& pid) override
+    std::tuple<mp::ProcessId, mp::SocketId> spawn(const std::string& new_exe_name, const fs::path& argv0_path) override
     {
-        return mp::SpawnProcess(pid, [&](int fd) {
+        return mp::SpawnProcess([&](std::string connect_info) {
             fs::path path = argv0_path;
             path.remove_filename();
             path /= fs::PathFromString(new_exe_name);
-            return std::vector<std::string>{fs::PathToString(path), "-ipcfd", strprintf("%i", fd)};
+            return std::vector<std::string>{fs::PathToString(path), "-ipcfd", std::move(connect_info)};
         });
     }
-    int waitSpawned(int pid) override { return mp::WaitProcess(pid); }
-    bool checkSpawned(int argc, char* argv[], int& fd) override
+    int waitSpawned(mp::ProcessId pid) override { return mp::WaitProcess(pid); }
+    bool checkSpawned(int argc, char* argv[], mp::SocketId& socket) override
     {
         // If this process was not started with a single -ipcfd argument, it is
         // not a process spawned by the spawn() call above, so return false and
@@ -55,15 +56,17 @@ public:
         // in combination with other arguments because the parent process
         // should be able to control the child process through the IPC protocol
         // without passing information out of band.
-        if (!ParseInt32(argv[2], &fd)) {
-            throw std::runtime_error(strprintf("Invalid -ipcfd number '%s'", argv[2]));
+        try {
+           socket = mp::StartSpawned(argv[2]);
+        } catch (const std::exception& e) {
+           throw std::runtime_error(strprintf("Invalid -ipcfd number '%s' (%s)", argv[2], e.what()));
         }
         return true;
     }
-    int connect(const fs::path& data_dir,
+    mp::SocketId connect(const fs::path& data_dir,
                 const std::string& dest_exe_name,
                 std::string& address) override;
-    int bind(const fs::path& data_dir, const std::string& exe_name, std::string& address) override;
+    mp::SocketId bind(const fs::path& data_dir, const std::string& exe_name, std::string& address) override;
 };
 
 static bool ParseAddress(std::string& address,
@@ -72,7 +75,7 @@ static bool ParseAddress(std::string& address,
                   struct sockaddr_un& addr,
                   std::string& error)
 {
-    if (address.compare(0, 4, "unix") == 0 && (address.size() == 4 || address[4] == ':')) {
+    if (address == "unix" || address.starts_with("unix:")) {
         fs::path path;
         if (address.size() <= 5) {
             path = data_dir / fs::PathFromString(strprintf("%s.sock", RemovePrefixView(dest_exe_name, "bitcoin-")));
@@ -95,7 +98,7 @@ static bool ParseAddress(std::string& address,
     return false;
 }
 
-int ProcessImpl::connect(const fs::path& data_dir,
+mp::SocketId ProcessImpl::connect(const fs::path& data_dir,
                          const std::string& dest_exe_name,
                          std::string& address)
 {
@@ -105,8 +108,8 @@ int ProcessImpl::connect(const fs::path& data_dir,
         throw std::invalid_argument(error);
     }
 
-    int fd;
-    if ((fd = ::socket(addr.sun_family, SOCK_STREAM, 0)) == -1) {
+    mp::SocketId fd;
+    if ((fd = ::socket(addr.sun_family, SOCK_STREAM, 0)) == mp::SocketError) {
         throw std::system_error(errno, std::system_category());
     }
     if (::connect(fd, (struct sockaddr*)&addr, sizeof(addr)) == 0) {
@@ -114,12 +117,12 @@ int ProcessImpl::connect(const fs::path& data_dir,
     }
     int connect_error = errno;
     if (::close(fd) != 0) {
-        LogPrintf("Error closing file descriptor %i '%s': %s\n", fd, address, SysErrorString(errno));
+        LogWarning("Error closing file descriptor %i '%s': %s", fd, address, SysErrorString(errno));
     }
     throw std::system_error(connect_error, std::system_category());
 }
 
-int ProcessImpl::bind(const fs::path& data_dir, const std::string& exe_name, std::string& address)
+mp::SocketId ProcessImpl::bind(const fs::path& data_dir, const std::string& exe_name, std::string& address)
 {
     struct sockaddr_un addr;
     std::string error;
@@ -135,8 +138,8 @@ int ProcessImpl::bind(const fs::path& data_dir, const std::string& exe_name, std
         }
     }
 
-    int fd;
-    if ((fd = ::socket(addr.sun_family, SOCK_STREAM, 0)) == -1) {
+    mp::SocketId fd;
+    if ((fd = ::socket(addr.sun_family, SOCK_STREAM, 0)) == mp::SocketError) {
         throw std::system_error(errno, std::system_category());
     }
 
@@ -145,7 +148,7 @@ int ProcessImpl::bind(const fs::path& data_dir, const std::string& exe_name, std
     }
     int bind_error = errno;
     if (::close(fd) != 0) {
-        LogPrintf("Error closing file descriptor %i: %s\n", fd, SysErrorString(errno));
+        LogWarning("Error closing file descriptor %i: %s", fd, SysErrorString(errno));
     }
     throw std::system_error(bind_error, std::system_category());
 }

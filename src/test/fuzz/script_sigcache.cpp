@@ -1,4 +1,4 @@
-// Copyright (c) 2020-2022 The Bitcoin Core developers
+// Copyright (c) 2020-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
@@ -25,6 +25,7 @@ void initialize_script_sigcache()
 
 FUZZ_TARGET(script_sigcache, .init = initialize_script_sigcache)
 {
+    SeedRandomStateForTest(SeedRand::ZEROS);
     FuzzedDataProvider fuzzed_data_provider(buffer.data(), buffer.size());
 
     const auto max_sigcache_bytes{fuzzed_data_provider.ConsumeIntegralInRange<size_t>(0, DEFAULT_SIGNATURE_CACHE_BYTES)};

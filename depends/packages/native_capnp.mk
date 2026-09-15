@@ -1,9 +1,9 @@
 package=native_capnp
-$(package)_version=1.0.1
+$(package)_version=1.5.0
 $(package)_download_path=https://capnproto.org/
 $(package)_download_file=capnproto-c++-$($(package)_version).tar.gz
 $(package)_file_name=capnproto-cxx-$($(package)_version).tar.gz
-$(package)_sha256_hash=0f7f4b8a76a2cdb284fddef20de8306450df6dd031a47a15ac95bc43c3358e09
+$(package)_sha256_hash=77dbc13ca82d9c87ddb4581dd49559d45b63096433d3dadea08b7f31b360a5ba
 
 define $(package)_set_vars
   $(package)_config_opts := -DBUILD_TESTING=OFF

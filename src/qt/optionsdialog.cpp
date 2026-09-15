@@ -1,8 +1,8 @@
-// Copyright (c) 2011-2022 The Bitcoin Core developers
+// Copyright (c) 2011-present The Bitcoin Core developers
 // Distributed under the MIT software license, see the accompanying
 // file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
-#include <config/bitcoin-config.h> // IWYU pragma: keep
+#include <bitcoin-build-config.h> // IWYU pragma: keep
 
 #include <qt/optionsdialog.h>
 #include <qt/forms/ui_optionsdialog.h>
@@ -15,9 +15,9 @@
 
 #include <common/system.h>
 #include <interfaces/node.h>
-#include <node/chainstatemanager_args.h>
 #include <netbase.h>
-#include <txdb.h>
+#include <node/caches.h>
+#include <node/chainstatemanager_args.h>
 #include <util/strencodings.h>
 
 #include <chrono>
@@ -95,7 +95,7 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
     ui->verticalLayout->setStretchFactor(ui->tabWidget, 1);
 
     /* Main elements init */
-    ui->databaseCache->setRange(nMinDbCache, std::numeric_limits<int>::max());
+    ui->databaseCache->setRange(MIN_DBCACHE_BYTES / 1_MiB, std::numeric_limits<int>::max());
     ui->threadsScriptVerif->setMinimum(-GetNumCores());
     ui->threadsScriptVerif->setMaximum(MAX_SCRIPTCHECK_THREADS);
     ui->pruneWarning->setVisible(false);
@@ -105,10 +105,6 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
     connect(ui->prune, &QPushButton::toggled, ui->pruneSize, &QWidget::setEnabled);
 
     /* Network elements init */
-#ifndef USE_UPNP
-    ui->mapPortUpnp->setEnabled(false);
-#endif
-
     ui->proxyIp->setEnabled(false);
     ui->proxyPort->setEnabled(false);
     ui->proxyPort->setValidator(new QIntValidator(1, 65535, this));
@@ -143,7 +139,7 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
     }
 
 #ifdef ENABLE_EXTERNAL_SIGNER
-    ui->externalSignerPath->setToolTip(ui->externalSignerPath->toolTip().arg(PACKAGE_NAME));
+    ui->externalSignerPath->setToolTip(ui->externalSignerPath->toolTip().arg(CLIENT_NAME));
 #else
     //: "External signing" means using devices such as hardware wallets.
     ui->externalSignerPath->setToolTip(tr("Compiled without external signing support (required for external signing)"));
@@ -152,12 +148,12 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
     /* Display elements init */
     QDir translations(":translations");
 
-    ui->bitcoinAtStartup->setToolTip(ui->bitcoinAtStartup->toolTip().arg(PACKAGE_NAME));
-    ui->bitcoinAtStartup->setText(ui->bitcoinAtStartup->text().arg(PACKAGE_NAME));
+    ui->bitcoinAtStartup->setToolTip(ui->bitcoinAtStartup->toolTip().arg(CLIENT_NAME));
+    ui->bitcoinAtStartup->setText(ui->bitcoinAtStartup->text().arg(CLIENT_NAME));
 
-    ui->openBitcoinConfButton->setToolTip(ui->openBitcoinConfButton->toolTip().arg(PACKAGE_NAME));
+    ui->openBitcoinConfButton->setToolTip(ui->openBitcoinConfButton->toolTip().arg(CLIENT_NAME));
 
-    ui->lang->setToolTip(ui->lang->toolTip().arg(PACKAGE_NAME));
+    ui->lang->setToolTip(ui->lang->toolTip().arg(CLIENT_NAME));
     ui->lang->addItem(QString("(") + tr("default") + QString(")"), QVariant(""));
     for (const QString &langStr : translations.entryList())
     {
@@ -168,11 +164,7 @@ OptionsDialog::OptionsDialog(QWidget* parent, bool enableWallet)
         {
             /** display language strings as "native language - native country/territory (locale name)", e.g. "Deutsch - Deutschland (de)" */
             ui->lang->addItem(locale.nativeLanguageName() + QString(" - ") +
-#if (QT_VERSION >= QT_VERSION_CHECK(6, 2, 0))
                               locale.nativeTerritoryName() +
-#else
-                              locale.nativeCountryName() +
-#endif
                               QString(" (") + langStr + QString(")"), QVariant(langStr));
 
         }
@@ -300,7 +292,6 @@ void OptionsDialog::setMapper()
     mapper->addMapping(ui->m_enable_psbt_controls, OptionsModel::EnablePSBTControls);
 
     /* Network */
-    mapper->addMapping(ui->mapPortUpnp, OptionsModel::MapPortUPnP);
     mapper->addMapping(ui->mapPortNatpmp, OptionsModel::MapPortNatpmp);
     mapper->addMapping(ui->allowIncoming, OptionsModel::Listen);
     mapper->addMapping(ui->enableServer, OptionsModel::Server);
@@ -465,17 +456,14 @@ void OptionsDialog::updateDefaultProxyNets()
         proxyIpText = ui_proxy.ToStringAddrPort();
     }
 
-    Proxy proxy;
-    bool has_proxy;
+    const auto proxy_ipv4 = model->node().getProxy(NET_IPV4);
+    ui->proxyReachIPv4->setChecked(proxy_ipv4 && proxy_ipv4->ToString() == proxyIpText);
 
-    has_proxy = model->node().getProxy(NET_IPV4, proxy);
-    ui->proxyReachIPv4->setChecked(has_proxy && proxy.ToString() == proxyIpText);
+    const auto proxy_ipv6 = model->node().getProxy(NET_IPV6);
+    ui->proxyReachIPv6->setChecked(proxy_ipv6 && proxy_ipv6->ToString() == proxyIpText);
 
-    has_proxy = model->node().getProxy(NET_IPV6, proxy);
-    ui->proxyReachIPv6->setChecked(has_proxy && proxy.ToString() == proxyIpText);
-
-    has_proxy = model->node().getProxy(NET_ONION, proxy);
-    ui->proxyReachTor->setChecked(has_proxy && proxy.ToString() == proxyIpText);
+    const auto proxy_onion = model->node().getProxy(NET_ONION);
+    ui->proxyReachTor->setChecked(proxy_onion && proxy_onion->ToString() == proxyIpText);
 }
 
 ProxyAddressValidator::ProxyAddressValidator(QObject *parent) :
@@ -491,7 +479,7 @@ QValidator::State ProxyAddressValidator::validate(QString &input, int &pos) cons
     if (!SplitHostPort(input.toStdString(), port, hostname) || port != 0) return QValidator::Invalid;
 
     CService serv(LookupNumeric(input.toStdString(), DEFAULT_GUI_PROXY_PORT));
-    Proxy addrProxy = Proxy(serv, true);
+    Proxy addrProxy = Proxy(serv, /*tor_stream_isolation=*/true);
     if (addrProxy.IsValid())
         return QValidator::Acceptable;
 
